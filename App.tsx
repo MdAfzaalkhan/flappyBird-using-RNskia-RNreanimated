@@ -1,118 +1,269 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
+/* eslint-disable react-native/no-inline-styles */
+/* eslint-disable react-hooks/exhaustive-deps */
 import React from 'react';
-import type {PropsWithChildren} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
+  useSharedValue,
+  withTiming,
+  Easing,
+  withSequence,
+  useFrameCallback,
+  useDerivedValue,
+  interpolate,
+  Extrapolation,
+  useAnimatedReaction,
+  runOnJS,
+  cancelAnimation,
+} from 'react-native-reanimated';
+import {Platform, useWindowDimensions} from 'react-native';
+import {
+  Canvas,
+  useImage,
+  Image,
+  Group,
   Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+  matchFont,
+} from '@shopify/react-native-skia';
 
+import {useEffect, useState} from 'react';
 import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+  GestureHandlerRootView,
+  GestureDetector,
+  Gesture,
+} from 'react-native-gesture-handler';
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+const GRAVITY = 1000;
+const JUMP_FORCE = -500;
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+const pipeWidth = 104;
+const pipeHeight = 640;
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+const App = () => {
+  const {width, height} = useWindowDimensions();
+  const [score, setScore] = useState(0);
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  const bg = useImage(require('./assets/sprites/background-day.png'));
+  const bird = useImage(require('./assets/sprites/yellowbird-upflap.png'));
+  const pipeBottom = useImage(require('./assets/sprites/pipe-green.png'));
+  const pipeTop = useImage(require('./assets/sprites/pipe-green-top.png'));
+  const base = useImage(require('./assets/sprites/base.png'));
+
+  const gameOver = useSharedValue(false);
+  const pipeX = useSharedValue(width);
+
+  const birdY = useSharedValue(height / 3);
+  const birdX = width / 4;
+  const birdYVelocity = useSharedValue(0);
+
+  const pipeOffset = useSharedValue(0);
+  const topPipeY = useDerivedValue(() => pipeOffset.value - 320);
+  const bottomPipeY = useDerivedValue(() => height - 320 + pipeOffset.value);
+
+  const pipesSpeed = useDerivedValue(() => {
+    return interpolate(score, [0, 20], [1, 2]);
+  });
+
+  const obstacles = useDerivedValue(() => [
+    // bottom pipe
+    {
+      x: pipeX.value,
+      y: bottomPipeY.value,
+      h: pipeHeight,
+      w: pipeWidth,
+    },
+    // top pipe
+    {
+      x: pipeX.value,
+      y: topPipeY.value,
+      h: pipeHeight,
+      w: pipeWidth,
+    },
+  ]);
+
+  useEffect(() => {
+    moveTheMap();
+  }, []);
+
+  const moveTheMap = () => {
+    pipeX.value = withSequence(
+      withTiming(width, {duration: 0}),
+      withTiming(-150, {
+        duration: 3000 / pipesSpeed.value,
+        easing: Easing.linear,
+      }),
+      withTiming(width, {duration: 0}),
+    );
   };
 
-  return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+  // Scoring system
+  useAnimatedReaction(
+    () => pipeX.value,
+    (currentValue, previousValue) => {
+      const middle = birdX;
+
+      // change offset for the position of the next gap
+      if (previousValue && currentValue < -100 && previousValue > -100) {
+        pipeOffset.value = Math.random() * 400 - 200;
+        cancelAnimation(pipeX);
+        runOnJS(moveTheMap)();
+      }
+
+      if (
+        currentValue !== previousValue &&
+        previousValue &&
+        currentValue <= middle &&
+        previousValue > middle
+      ) {
+        // do something ✨
+        runOnJS(setScore)(score + 1);
+      }
+    },
   );
-}
 
-const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-});
+  const isPointCollidingWithRect = (point: any, rect: any) => {
+    'worklet';
+    return (
+      point.x >= rect.x && // right of the left edge AND
+      point.x <= rect.x + rect.w && // left of the right edge AND
+      point.y >= rect.y && // below the top AND
+      point.y <= rect.y + rect.h // above the bottom
+    );
+  };
 
+  // Collision detection
+  useAnimatedReaction(
+    () => birdY.value,
+    (currentValue, _previousValue) => {
+      const center = {
+        x: birdX + 32,
+        y: birdY.value + 24,
+      };
+
+      // Ground collision detection
+      if (currentValue > height - 100 || currentValue < 0) {
+        gameOver.value = true;
+      }
+
+      const isColliding = obstacles.value.some(rect =>
+        isPointCollidingWithRect(center, rect),
+      );
+      if (isColliding) {
+        gameOver.value = true;
+      }
+    },
+  );
+
+  useAnimatedReaction(
+    () => gameOver.value,
+    (currentValue, previousValue) => {
+      if (currentValue && !previousValue) {
+        cancelAnimation(pipeX);
+      }
+    },
+  );
+
+  useFrameCallback(({timeSincePreviousFrame: dt}) => {
+    if (!dt || gameOver.value) {
+      return;
+    }
+    birdY.value = birdY.value + (birdYVelocity.value * dt) / 1000;
+    birdYVelocity.value = birdYVelocity.value + (GRAVITY * dt) / 1000;
+  });
+
+  const restartGame = () => {
+    'worklet';
+    birdY.value = height / 3;
+    birdYVelocity.value = 0;
+    gameOver.value = false;
+    pipeX.value = width;
+    runOnJS(moveTheMap)();
+    runOnJS(setScore)(0);
+  };
+
+  const gesture = Gesture.Tap().onStart(() => {
+    if (gameOver.value) {
+      // restart
+      restartGame();
+    } else {
+      // jump
+      birdYVelocity.value = JUMP_FORCE;
+    }
+  });
+
+  const birdTransform = useDerivedValue(() => {
+    return [
+      {
+        rotate: interpolate(
+          birdYVelocity.value,
+          [-500, 500],
+          [-0.5, 0.5],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ];
+  });
+  const birdOrigin = useDerivedValue(() => {
+    return {x: width / 4 + 32, y: birdY.value + 24};
+  });
+
+  const fontFamily = Platform.select({ios: 'Helvetica', default: 'serif'});
+  const fontStyle = {
+    fontFamily,
+    fontSize: 40,
+    fontWeight: 'bold',
+  };
+  // @ts-ignore
+  const font = matchFont(fontStyle);
+
+  return (
+    <GestureHandlerRootView style={{flex: 1}}>
+      <GestureDetector gesture={gesture}>
+        <Canvas style={{width, height}}>
+          {/* BG */}
+          <Image image={bg} width={width} height={height} fit={'cover'} />
+
+          {/* Pipes */}
+          <Image
+            image={pipeTop}
+            y={topPipeY}
+            x={pipeX}
+            width={pipeWidth}
+            height={pipeHeight}
+          />
+          <Image
+            image={pipeBottom}
+            y={bottomPipeY}
+            x={pipeX}
+            width={pipeWidth}
+            height={pipeHeight}
+          />
+
+          {/* Base */}
+          <Image
+            image={base}
+            width={width}
+            height={150}
+            y={height - 75}
+            x={0}
+            fit={'cover'}
+          />
+
+          {/* Bird */}
+          <Group transform={birdTransform} origin={birdOrigin}>
+            <Image image={bird} y={birdY} x={birdX} width={64} height={48} />
+          </Group>
+
+          {/* Sim */}
+
+          {/* Score */}
+          <Text
+            x={width / 2 - 30}
+            y={100}
+            text={score.toString()}
+            font={font}
+          />
+        </Canvas>
+      </GestureDetector>
+    </GestureHandlerRootView>
+  );
+};
 export default App;
