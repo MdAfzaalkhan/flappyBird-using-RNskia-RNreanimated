@@ -3,7 +3,7 @@ name: Daily Random Commit
 on:
   push:
     branches:
-      - main
+      - mainn
   schedule:
     - cron: '0 0 * * *'
 permissions:
@@ -26,14 +26,6 @@ jobs:
             git config --local user.name "MdAfzaalkhan"
             git add random_change.txt
             git commit -m "Daily random commit $i"
-          done
-
-
-      - name: Commit changes
-        run: |
-          git config --local user.email "afzaalk137@gmail.com"
-          git config --local user.name "MdAfzaalkhan"
-          git add random_change.txt
-          git commit -m "Daily random commit"
           git push https://x-access-token:${{ secrets.PAT_TOKEN }}@github.com/MdAfzaalkhan/flappyBird-using-RNskia-RNreanimated.git HEAD:main
+          done
 
