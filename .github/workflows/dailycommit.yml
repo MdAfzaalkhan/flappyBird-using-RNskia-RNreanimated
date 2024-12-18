@@ -19,7 +19,14 @@ jobs:
 
       - name: Make random change
         run: |
-          echo "Random change at $(date)" >> random_change.txt
+          RANDOM_COMMITS=$((RANDOM % 11))
+          for i in $(seq 1 $RANDOM_COMMITS); do
+            echo "Random change $i at $(date)" >> random_change.txt
+            git config --local user.email "afzaalk137@gmail.com"
+            git config --local user.name "MdAfzaalkhan"
+            git add random_change.txt
+            git commit -m "Daily random commit $i"
+          done
 
       - name: Commit changes
         run: |
