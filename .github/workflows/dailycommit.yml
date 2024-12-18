@@ -28,6 +28,7 @@ jobs:
             git commit -m "Daily random commit $i"
           done
 
+          
       - name: Commit changes
         run: |
           git config --local user.email "afzaalk137@gmail.com"
